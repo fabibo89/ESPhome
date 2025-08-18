@@ -1,0 +1,568 @@
+substitutions:
+  stepper_endstop: '11500'
+  
+esphome:
+  name: casa-turtle
+  friendly_name: Casa Turtle
+  
+  on_boot:
+      - priority: -200.0
+        then:
+          # Stepper starts out with a target and current position of 0 on boot. Restore state.
+          - stepper.report_position:
+              id: stepper_motor
+              position: !lambda return int($stepper_endstop * id(blinds_cover).position);
+          - stepper.set_target:
+              id: stepper_motor
+              target: !lambda return int($stepper_endstop * id(blinds_cover).position);  
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "BcnV2cXbeBUfM0mesGVmv8lYcmdCK5oso0IamPzlFP8="
+  actions:
+    - action: lueften
+      variables:
+        air_time: int    
+      then:
+      - climate.control:
+          id: climatecontroll
+          mode: FAN_ONLY
+      - delay: !lambda "return air_time;"
+      - fan.turn_off: fan_climate
+      - climate.control:
+          id: climatecontroll
+          mode: HEAT_COOL
+          fan_mode: AUTO
+
+
+ota:
+  - platform: esphome
+    password: "c1cf154cb608e0eb39e40da612635818"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Casa-Turtle Fallback Hotspot"
+    password: "xgaH68VQK8q4"
+
+captive_portal:
+
+number:
+  - platform: template
+    name: "Lüftungsdauer"
+    id: duration_ventilate
+    optimistic: true
+    min_value: 1
+    max_value: 30
+    step: 1
+
+climate:
+  - platform: thermostat
+    name: "Temperaturregelung"
+    sensor: bme280_temperature
+    id: climatecontroll
+    humidity_sensor: bme280_humidity
+    min_cooling_off_time: 60s #300s
+    min_cooling_run_time: 60s #300s
+    min_heating_off_time: 60s #300s
+    min_heating_run_time: 60s #300s
+    min_fanning_off_time: 30s #300s
+    min_fanning_run_time: 30s #300s
+    min_idle_time: 3s
+    visual: 
+      min_temperature: 0
+      temperature_step: 0.5
+      min_humidity: 30%
+      max_humidity: 99%      
+    cool_action:
+      - switch.turn_off: switch_heat
+      - cover.open: cover_Luftungstur
+      - cover.open: cover_Klapptur
+      - cover.open: cover_Wintergarten
+#      - wait_until:
+#          condition:
+#            lambda: return (id(cover_Luftungstur).position == COVER_OPEN);      
+      - wait_until:
+          condition:
+            lambda: 'return !isnan(id(cover_Luftungstur).position) && id(cover_Luftungstur).position > 0.95;'
+          timeout: 20s
+      - fan.turn_on: fan_climate
+    heat_action:
+      - fan.turn_off: fan_climate
+      - switch.turn_on: switch_heat
+      - cover.close: cover_Luftungstur          
+    fan_only_action:
+      - switch.turn_off: switch_heat
+      - cover.open: cover_Luftungstur
+      - cover.open: cover_Klapptur
+      - cover.open: cover_Wintergarten
+#      - wait_until:
+#          condition:
+#            lambda: return (id(cover_Luftungstur).position == COVER_OPEN);   
+      - wait_until:
+          condition:
+            lambda: 'return !isnan(id(cover_Luftungstur).position) && id(cover_Luftungstur).position > 0.95;'
+          timeout: 20s               
+      - fan.turn_on: fan_climate
+    off_mode: 
+      then:
+        - switch.turn_off: switch_heat
+        - fan.turn_off: fan_climate        
+    idle_action:
+      - logger.log: "idle_action"
+      - if:
+          condition:
+            lambda: 'return id(bme280_temperature).state < id(climatecontroll).target_temperature_low;'
+          then:
+            - cover.close: cover_Luftungstur     
+      - switch.turn_off: switch_heat
+      - fan.turn_off: fan_climate
+      #- cover.close: cover_Luftungstur
+    default_preset: Home
+    preset:
+      - name: Home
+        default_target_temperature_low: 15 °C
+        default_target_temperature_high: 25 °C
+
+sensor:
+  - platform: bme280_i2c
+    temperature:
+      name: "Temperatur"
+      id: bme280_temperature
+      oversampling: 8x
+      filters:
+        - median:
+            window_size: 7
+            send_every: 3
+            send_first_at: 3
+        - lambda: |-
+            if (x < -10 || x > 60) return NAN;
+            return x;  
+        - filter_out: NAN
+    pressure:
+      name: "Luftdruck"
+      id: bme280_pressure
+      oversampling: 8x
+      filters:
+        - median:
+            window_size: 7
+            send_every: 3
+            send_first_at: 3
+        - lambda: |-
+            if (x < 800 || x > 1200) return NAN;  // hPa
+            return x;      
+        - filter_out: NAN
+    humidity:
+      name: "rel. Feuchtigkeit"
+      id: bme280_humidity
+      oversampling: 8x
+      filters:
+        - median:
+            window_size: 7
+            send_every: 3
+            send_first_at: 3
+        - lambda: |-
+            if (x < 0 || x > 100) return NAN;
+            return x;   
+        - filter_out: NAN
+    address: 0x76
+#  update_interval: 15s
+  - platform: template
+    name: "Altitude"
+    lambda: |-
+      const float STANDARD_SEA_LEVEL_PRESSURE = 1013.25; //in hPa, see note
+      return ((id(bme280_temperature).state + 273.15) / 0.0065) *
+        (powf((STANDARD_SEA_LEVEL_PRESSURE / id(bme280_pressure).state), 0.190234) - 1); // in meter
+    update_interval: 15s
+    icon: 'mdi:signal'
+    unit_of_measurement: 'm'
+  - platform: absolute_humidity
+    name: "Absolute Humidity"
+    temperature: bme280_temperature
+    humidity: bme280_humidity
+  - platform: template
+    name: "Dew Point"
+    lambda: |-
+      return (243.5*(log(id(bme280_humidity).state/100)+((17.67*id(bme280_temperature).state)/
+      (243.5+id(bme280_temperature).state)))/(17.67-log(id(bme280_humidity).state/100)-
+      ((17.67*id(bme280_temperature).state)/(243.5+id(bme280_temperature).state))));
+    unit_of_measurement: °C
+    icon: 'mdi:thermometer-alert'
+  - platform: bme280_i2c
+    temperature:
+      name: "Temperatur Wintergarten"
+      oversampling: 8x
+      filters:
+        - median:
+            window_size: 7
+            send_every: 3
+            send_first_at: 3
+        - lambda: |-
+            if (x < -10 || x > 60) return NAN;
+            return x;     
+        - filter_out: NAN
+    humidity:
+      name: "rel. Feuchtigkeit Wintergarten" 
+      oversampling: 8x
+      filters:
+        - median:
+            window_size: 7
+            send_every: 3
+            send_first_at: 3
+        - lambda: |-
+            if (x < 0 || x > 100) return NAN;
+            return x;  
+        - filter_out: NAN
+    address: 0x77    
+
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+    
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO39
+      inverted: true  
+    name: "Wintergartentaster"
+    on_press:
+      then:
+        - cover.toggle: cover_Wintergarten    
+  - platform: gpio
+    pin: GPIO35
+    name: "Gardinentaster"
+    device_class: window
+    on_release:
+      - stepper.report_position:
+          id: stepper_motor
+          position: !lambda return int($stepper_endstop);
+      - stepper.set_target:
+          id: stepper_motor
+          target: !lambda return int($stepper_endstop);    
+      #- lambda: |-
+      #    id(blinds_cover).position == COVER_OPEN;
+      #- cover.template.publish:
+      #    id: blinds_cover
+      #    position: 0 #!lambda 'return float(id(stepper_motor).current_position) / $stepper_endstop;' 
+
+      - cover.template.publish:
+          id: blinds_cover
+          state: OPEN #!lambda 'return float(id(stepper_motor).current_position) / $stepper_endstop;' #OPEN
+          current_operation: IDLE
+    #  - cover.
+    #  : id(blinds_cover).position = 0;
+    #
+
+#          - stepper.report_position:
+#              id: stepper_motor
+#              position: !lambda return int($stepper_endstop * id(blinds_cover).position);    
+
+  - platform: gpio
+    name: "Klapptürtaster"
+    pin:
+      number: GPIO36
+      inverted: true      
+    on_press:
+      then:
+        - cover.toggle: cover_Klapptur
+        
+
+switch:
+  - platform: gpio
+    pin: GPIO04
+    name: "Switch Klapptür A"
+    id: switch_Klapptur_A
+    entity_category: "config"
+  - platform: gpio
+    pin: GPIO16
+    name: "Switch Klapptür B"
+    id: switch_Klapptur_B
+    entity_category: "config"
+  - platform: gpio
+    pin: GPIO02
+    name: "Switch Lüftungstür A"
+    id: switch_Lueftungstur_A
+    entity_category: "config"
+  - platform: gpio
+    pin: GPIO00
+    name: "Switch Lüftungstür B"
+    id: switch_Lueftungstur_B  
+    entity_category: "config"
+  - platform: gpio
+    pin: GPIO27
+    id: switch_Wintergartentur_A
+    name: "Switch Wintergartentür A"
+    entity_category: "config"
+  - platform: gpio
+    pin: GPIO14
+    id: switch_Wintergartentur_B
+    name: "Switch Wintergartentür B"
+    entity_category: "config"    
+  - platform: gpio
+    pin: GPIO12
+    id: switch_Klappfenster_A
+  - platform: gpio
+    pin: GPIO13
+    id: switch_Klappfenster_B      
+  - platform: gpio
+    pin: GPIO32
+    inverted: true
+    name: "Steckdose 1"
+    id: switch_heat
+    entity_category: "config"
+    device_class: outlet
+  - platform: gpio
+    pin: GPIO33
+    inverted: true
+    name: "Steckdose 2"
+    entity_category: "config"
+    device_class: outlet
+  - platform: gpio
+    pin: GPIO25
+    inverted: true
+    name: "Steckdose 3"
+    entity_category: "config"
+    device_class: outlet
+  - platform: gpio
+    pin: GPIO26
+    inverted: true
+    name: "Steckdose 4"
+    entity_category: "config"
+    device_class: outlet
+  - platform: gpio
+    pin: GPIO23
+    name: "Power Kameras"
+    device_class: outlet    
+    restore_mode: RESTORE_DEFAULT_ON
+
+output:
+  - platform: ledc
+    pin: GPIO01
+    id: gpio_led
+  - platform: gpio
+    pin: GPIO15
+    id: gpio_fan   
+
+#      - if:
+#            condition:
+#              lambda: 'return (id(cover_Luftungstur).position == COVER_OPEN);'
+#            then:
+#              - logger.log: "The sensor value is over 30!"
+#              - cover.open: cover_Luftungstur
+#              - fan.turn_on: fan_climate
+#              - delay: 10s
+#            else:
+#              - logger.log: "The sensor value is below 30!"
+#              - cover.close: cover_Luftungstur
+#              - fan.turn_off: fan_climate
+#              - delay: 10s
+
+light:
+  - platform: monochromatic
+    name: "Beleuchtung"
+    output: gpio_led
+    id: light_stripe
+
+fan:
+  - platform: binary
+    output: gpio_fan
+    name: "Lüfter"
+    id: fan_climate
+    entity_category: "config"
+
+cover:
+  - platform: time_based
+    id: cover_Klapptur
+    name: "Klapptür"
+    open_action:
+      - switch.turn_on: switch_Klapptur_A
+      - switch.turn_off: switch_Klapptur_B
+    open_duration: 13s
+    close_action:
+      - switch.turn_off: switch_Klapptur_A
+      - switch.turn_on: switch_Klapptur_B
+      - light.turn_off: light_stripe
+    close_duration: 13s
+    stop_action:
+      - switch.turn_off: switch_Klapptur_A
+      - switch.turn_off: switch_Klapptur_B
+    assumed_state: true    
+    device_class: garage
+    on_closed:
+      - cover.close: cover_Luftungstur          
+  - platform: time_based
+    id: cover_Luftungstur
+    name: "Lüftungstür"
+    open_action:
+      - switch.turn_off: switch_Lueftungstur_A
+      - switch.turn_on: switch_Lueftungstur_B
+    open_duration: 15s
+    close_action:
+      - switch.turn_on: switch_Lueftungstur_A
+      - switch.turn_off: switch_Lueftungstur_B
+    close_duration: 15s
+    stop_action:
+      - switch.turn_off: switch_Lueftungstur_A
+      - switch.turn_off: switch_Lueftungstur_B
+    assumed_state: true    
+    device_class: door    
+  - platform: time_based
+    id: cover_Wintergarten
+    name: "Wintergartentür"
+    open_action:
+      - switch.turn_off: switch_Wintergartentur_A
+      - switch.turn_on: switch_Wintergartentur_B
+    open_duration: 16.5s
+    close_action:
+      - switch.turn_on: switch_Wintergartentur_A
+      - switch.turn_off: switch_Wintergartentur_B
+    close_duration: 16.5s
+    stop_action:
+      - switch.turn_off: switch_Wintergartentur_A
+      - switch.turn_off: switch_Wintergartentur_B
+    assumed_state: true    
+    device_class: garage    
+  - platform: time_based
+    id: cover_Klappfenster
+    name: "Klappfenster"
+    open_action:
+      - switch.turn_on: switch_Klappfenster_A
+      - switch.turn_off: switch_Klappfenster_B
+    open_duration: 11s
+    close_action:
+      - switch.turn_off: switch_Klappfenster_A
+      - switch.turn_on: switch_Klappfenster_B
+    close_duration: 11s
+    stop_action:
+      - switch.turn_off: switch_Klappfenster_A
+      - switch.turn_off: switch_Klappfenster_B
+    assumed_state: true    
+    device_class: window            
+    internal: true
+  - platform: template
+    name: "Gardine"
+    id: blinds_cover
+    open_action:
+      then:
+        - logger.log: "Opening"
+        - script.execute:
+            id: blinds_cover_set_position
+            pos: 1.0
+        - script.wait: blinds_cover_set_position
+    close_action:
+      then:
+        - logger.log: "Closing"
+        - script.execute:
+            id: blinds_cover_set_position
+            pos: 0.0
+        - script.wait: blinds_cover_set_position
+    position_action:
+      then:
+        - logger.log: "Positioning"
+        - script.execute:
+            id: blinds_cover_set_position
+            pos: !lambda 'return pos;'
+        - script.wait: blinds_cover_set_position
+    stop_action:
+      then:
+        - logger.log: "Stopping"
+        - script.execute:
+            id: blinds_cover_set_position
+            pos: !lambda 'return float(id(stepper_motor).current_position) / $stepper_endstop;'
+        - script.wait: blinds_cover_set_position
+    has_position: true
+    device_class: blind
+
+stepper:
+  - platform: a4988
+    id: stepper_motor
+    step_pin: GPIO18
+    dir_pin: 
+      number: GPIO19
+      inverted: true
+    sleep_pin: 
+      number: GPIO5
+      inverted: true  # using enable pin
+    max_speed: 250
+
+script:
+  - id: blinds_cover_set_position
+    parameters:
+      pos: float
+    mode: restart
+    then:
+      - stepper.set_target:
+          id: stepper_motor
+          target: !lambda return int($stepper_endstop * pos);
+      - while:
+          condition:
+            lambda: 'return id(stepper_motor).current_position != id(stepper_motor).target_position;'
+          then:
+            - cover.template.publish:
+                id: blinds_cover
+                position: !lambda 'return float(id(stepper_motor).current_position) / $stepper_endstop;' 
+                current_operation: !lambda 'return id(stepper_motor).current_position < id(stepper_motor).target_position ? COVER_OPERATION_OPENING : COVER_OPERATION_CLOSING;'
+            - delay: 250 ms
+      - cover.template.publish:
+          id: blinds_cover
+          state: !lambda 'return pos;'
+          current_operation: IDLE
+  - id: script_lueften
+    parameters:
+      time: int
+    then:
+      - logger.log: "The sensor value is below 30!"
+
+
+button:
+  - platform: template
+    name: "Gardine zurücksetzen"
+    id: blinds_reset
+    entity_category: "config"
+    on_press:
+      - script.execute:
+          id: blinds_cover_set_position
+          pos: 2
+      #- script.execute:
+      #    id: blinds_cover_set_position
+      #    pos: 2.0
+      #- script.wait: blinds_cover_set_position
+      #- script.execute:
+      #    id: blinds_cover_set_position
+      #    pos: 0.0
+      #- script.wait: blinds_cover_set_position                  
+  - platform: template
+    name: "Lüften"
+    on_press:
+      - climate.control:
+          id: climatecontroll
+          mode: FAN_ONLY
+      - delay: !lambda "return id(duration_ventilate).state * 1000 * 60;"
+      - fan.turn_off: fan_climate
+      - climate.control:
+          id: climatecontroll
+          mode: HEAT_COOL
+          fan_mode: AUTO
+
+select:
+  - platform: template
+    name: "Status Casa"
+    optimistic: true
+    options:
+      - im Winterschlaf
+      - da
+    initial_option: im Winterschlaf
+
+

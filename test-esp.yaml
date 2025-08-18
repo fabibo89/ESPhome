@@ -1,0 +1,46 @@
+esphome:
+  name: test-esp
+  friendly_name: Test ESP
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "+aJVa4aiZxNpntnvjYZwyr5u9RuC2mYwgk2AL0CaF5c="
+
+ota:
+  - platform: esphome
+    password: "4b1bad3f9d7e94a842f15fb6c25c040e"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Test-Esp Fallback Hotspot"
+    password: "5hsixgTU6xvI"
+
+captive_portal:
+
+i2c:
+  sda: GPIO21
+  scl: GPIO22    
+
+sensor:
+  - platform: bme280_i2c
+    temperature:
+      name: "BME280 Temperature"
+    pressure:
+      name: "BME280 Pressure"
+    humidity:
+      name: "BME280 Humidity" 
+    address: 0x77
+   

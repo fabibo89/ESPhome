@@ -1,0 +1,147 @@
+substitutions:
+  stepper_endstop: '650'
+
+esphome:
+  name: curtain
+  friendly_name: Curtain
+
+  on_boot:
+      - priority: -200.0
+        then:
+          # Stepper starts out with a target and current position of 0 on boot. Restore state.
+          - stepper.report_position:
+              id: stepper_motor
+              position: !lambda return int($stepper_endstop * id(blinds_cover).position);
+          - stepper.set_target:
+              id: stepper_motor
+              target: !lambda return int($stepper_endstop * id(blinds_cover).position);
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "DXg4+nChc3pGnBaDdycB5mJxjIVMeR0BHVCuI9LNE1c="
+
+ota:
+  - platform: esphome
+    password: "cc17e2288cd7bbdbf609e991c4a07ed2"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Curtain Fallback Hotspot"
+    password: "fq1zazOFAIDs"
+
+captive_portal:
+
+switch:
+  - platform: gpio
+    pin: GPIO27
+    name: "switch A"
+    id: switch_Wintergarten_A
+  - platform: gpio
+    pin: GPIO14
+    name: "Switch B"  
+    id: switch_Wintergarten_B  
+    
+binary_sensor:
+  - platform: gpio
+    pin: GPIO35
+    name: 'Endanschlag Gardine'
+    id: Gardine_Taster
+    device_class: window
+
+stepper:
+  - platform: a4988
+    id: stepper_motor
+    step_pin: GPIO18
+    dir_pin: 
+      number: GPIO19
+      #inverted: false
+    sleep_pin: 
+      number: GPIO5
+      inverted: true  # using enable pin
+    max_speed: 250
+
+cover:
+  - platform: template
+    name: None
+    id: blinds_cover
+    open_action:
+      then:
+        - logger.log: "Opening"
+        - script.execute:
+            id: blinds_cover_set_position
+            pos: 1.0
+        - script.wait: blinds_cover_set_position
+    close_action:
+      then:
+        - logger.log: "Closing"
+        - script.execute:
+            id: blinds_cover_set_position
+            pos: 0.0
+        - script.wait: blinds_cover_set_position
+    position_action:
+      then:
+        - logger.log: "Positioning"
+        - script.execute:
+            id: blinds_cover_set_position
+            pos: !lambda 'return pos;'
+        - script.wait: blinds_cover_set_position
+    stop_action:
+      then:
+        - logger.log: "Stopping"
+        - script.execute:
+            id: blinds_cover_set_position
+            pos: !lambda 'return float(id(stepper_motor).current_position) / $stepper_endstop;'
+        - script.wait: blinds_cover_set_position
+    has_position: true
+    device_class: blind
+
+script:
+  - id: blinds_cover_set_position
+    parameters:
+      pos: float
+    mode: restart
+    then:
+      - stepper.set_target:
+          id: stepper_motor
+          target: !lambda return int($stepper_endstop * pos);
+      - while:
+          condition:
+            lambda: 'return id(stepper_motor).current_position != id(stepper_motor).target_position;'
+          then:
+            - cover.template.publish:
+                id: blinds_cover
+                position: !lambda 'return float(id(stepper_motor).current_position) / $stepper_endstop;' 
+                current_operation: !lambda 'return id(stepper_motor).current_position < id(stepper_motor).target_position ? COVER_OPERATION_OPENING : COVER_OPERATION_CLOSING;'
+            - delay: 250 ms
+      - cover.template.publish:
+          id: blinds_cover
+          state: !lambda 'return pos;'
+          current_operation: IDLE
+
+button:
+  - platform: template
+    name: Reset position
+    id: blinds_reset
+    entity_category: "config"
+    on_press:
+      - script.execute:
+          id: blinds_cover_set_position
+          pos: 2.0
+      - script.wait: blinds_cover_set_position
+      - script.execute:
+          id: blinds_cover_set_position
+          pos: 0.0
+      - script.wait: blinds_cover_set_position    

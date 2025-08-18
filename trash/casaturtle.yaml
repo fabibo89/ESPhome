@@ -1,0 +1,32 @@
+esphome:
+  name: casaturtle
+  friendly_name: CasaTurtle
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "wh281zhzC+YG18c4pg9/XjI2E8dQBsNl0nBPRoTf/YY="
+
+ota:
+  - platform: esphome
+    password: "816d1e0bea43ae9f4d0aa77616b8172c"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Casaturtle Fallback Hotspot"
+    password: "t44bt6joAhuC"
+
+captive_portal:
+    

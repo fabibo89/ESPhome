@@ -1,0 +1,8 @@
+secrets.yaml
+.esphome/
+.pioenvs/
+.pio/
+.cache/
+*.bin
+*.log
+.DS_Store
