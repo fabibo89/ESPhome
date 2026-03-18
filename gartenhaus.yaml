@@ -181,11 +181,11 @@ cover:
     open_action:
       - switch.turn_on: switch_Schiebetur_A
       - switch.turn_off: switch_Schiebetur_B
-    open_duration: 13s
+    open_duration: 15s
     close_action:
       - switch.turn_off: switch_Schiebetur_A
       - switch.turn_on: switch_Schiebetur_B
-    close_duration: 13s
+    close_duration: 15s
     stop_action:
       - switch.turn_off: switch_Schiebetur_A
       - switch.turn_off: switch_Schiebetur_B
@@ -198,11 +198,11 @@ cover:
     open_action:
       - switch.turn_off: switch_Dach_A
       - switch.turn_on: switch_Dach_B
-    open_duration: 15s
+    open_duration: 7s
     close_action:
       - switch.turn_on: switch_Dach_A
       - switch.turn_off: switch_Dach_B
-    close_duration: 15s
+    close_duration: 7s
     stop_action:
       - switch.turn_off: switch_Dach_A
       - switch.turn_off: switch_Dach_B

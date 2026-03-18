@@ -152,19 +152,6 @@ sensor:
             if (x < -10 || x > 60) return NAN;
             return x;  
         - filter_out: NAN
-    pressure:
-      name: "Luftdruck"
-      id: bme280_pressure
-      oversampling: 8x
-      filters:
-        - median:
-            window_size: 7
-            send_every: 3
-            send_first_at: 3
-        - lambda: |-
-            if (x < 800 || x > 1200) return NAN;  // hPa
-            return x;      
-        - filter_out: NAN
     humidity:
       name: "rel. Feuchtigkeit"
       id: bme280_humidity
@@ -184,14 +171,6 @@ sensor:
     name: "Absolute Humidity"
     temperature: bme280_temperature
     humidity: bme280_humidity
-  - platform: template
-    name: "Dew Point"
-    lambda: |-
-      return (243.5*(log(id(bme280_humidity).state/100)+((17.67*id(bme280_temperature).state)/
-      (243.5+id(bme280_temperature).state)))/(17.67-log(id(bme280_humidity).state/100)-
-      ((17.67*id(bme280_temperature).state)/(243.5+id(bme280_temperature).state))));
-    unit_of_measurement: °C
-    icon: 'mdi:thermometer-alert'
   - platform: bme280_i2c
     temperature:
       name: "Temperatur Wintergarten"
@@ -314,9 +293,8 @@ switch:
     name: "Switch Brunnen"
     entity_category: "config"                   
   - platform: gpio
-    pin: GPIO32
-    inverted: true
-    name: "Steckdose 1"
+    pin: GPIO26
+    name: "Heizung"
     id: switch_heat
     entity_category: "config"
     device_class: outlet
@@ -333,7 +311,7 @@ switch:
     entity_category: "config"
     device_class: outlet
   - platform: gpio
-    pin: GPIO26
+    pin: GPIO32
     inverted: true
     name: "Steckdose 4"
     entity_category: "config"
@@ -405,11 +383,11 @@ cover:
     open_action:
       - switch.turn_off: switch_Lueftungstur_A
       - switch.turn_on: switch_Lueftungstur_B
-    open_duration: 15s
+    open_duration: 16s
     close_action:
       - switch.turn_on: switch_Lueftungstur_A
       - switch.turn_off: switch_Lueftungstur_B
-    close_duration: 15s
+    close_duration: 16s
     stop_action:
       - switch.turn_off: switch_Lueftungstur_A
       - switch.turn_off: switch_Lueftungstur_B
@@ -555,14 +533,4 @@ button:
           id: climatecontroll
           mode: HEAT_COOL
           fan_mode: AUTO
-
-select:
-  - platform: template
-    name: "Status Casa"
-    optimistic: true
-    options:
-      - im Winterschlaf
-      - da
-    initial_option: im Winterschlaf
-
 
