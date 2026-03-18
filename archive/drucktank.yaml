@@ -1,0 +1,62 @@
+esphome:
+  name: drucktank
+  friendly_name: Drucktank
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "2eq1f6D17vTgfS6gJGhqE4l2TjL3ypDyqG86M0ZGBt8="
+
+ota:
+  - platform: esphome
+    password: "4904acbdf5bec59b96cf223010ab36c8"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Drucktank Fallback Hotspot"
+    password: "Pk0IQxCqDWLf"
+
+captive_portal:
+    
+sensor:
+  # 1) Spannung direkt vom ADC (Sensor am Pin, kein Teiler)
+  - platform: adc
+    pin: GPIO33        # sichere ADC1-Pins: GPIO32–GPIO39
+    id: adc_v
+    name: "Drucksensor Spannung"
+    unit_of_measurement: "V"
+    attenuation: 12db        # erlaubt bis ca. 3.9 V
+    update_interval: 2s
+    accuracy_decimals: 3
+
+  # 2) Druck in bar (lineare Kennlinie)
+  - platform: template
+    name: "Leitungsdruck"
+    unit_of_measurement: "bar"
+    icon: "mdi:gauge"
+    accuracy_decimals: 2
+    update_interval: 2s
+    device_class: pressure
+    state_class: measurement
+    lambda: |-
+      const float V_MIN = 0.50;   // Spannung bei P_MIN
+      const float V_MAX = 4.50;   // Spannung bei P_MAX
+      const float P_MIN = 0.0;    // bar bei 0.5 V
+      const float P_MAX = 16.0;   // bar bei 4.5 V (anpassen!)
+      float v = id(adc_v).state;
+      float p = P_MIN + (v - V_MIN) * (P_MAX - P_MIN) / (V_MAX - V_MIN);
+      if (p < P_MIN) p = P_MIN;
+      if (p > P_MAX) p = P_MAX;
+      return p;

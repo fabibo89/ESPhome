@@ -1,0 +1,77 @@
+esphome:
+  name: ref-temp-sensor-sht41
+  friendly_name: Ref.-Temp Sensor SHT41
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+
+api:
+  encryption:
+    key: "6wALhkC2nyNehO9+hygf3UomuP/GFFnzwojQ8UjFDV0="
+
+ota:
+  - platform: esphome
+    password: "28ce8ad3235300d2bcd54447cfd10654"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Ref-Temp-Sensor-Sht41"
+    password: "FRET7RAdIDyy"
+
+captive_portal:
+
+# --- I2C für SHT41 ---
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+  scan: true
+
+sensor:
+  - platform: sht4x
+    address: 0x44          # Standard für SHT4x (SHT40/41/45)
+    update_interval: 10s
+    temperature:
+      name: "Temperatur"
+      id: ref_temp
+      unit_of_measurement: "°C"
+      accuracy_decimals: 2
+      # optional: kleiner Glättungsfilter
+      filters:
+        - sliding_window_moving_average:
+            window_size: 6
+            send_every: 1
+        # optional: Offset-Kalibrierung
+        # - offset: -0.20
+    humidity:
+      name: "Luftfeuchte"
+      id: ref_hum
+      unit_of_measurement: "%"
+      accuracy_decimals: 1
+      filters:
+        - sliding_window_moving_average:
+            window_size: 6
+            send_every: 1
+        # optional: Offset-Kalibrierung
+        # - offset: 1.5
+
+# optional, aber praktisch zum Debuggen:
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP"
+    ssid:
+      name: "WLAN SSID"
+
+binary_sensor:
+  - platform: status
+    name: "Status"
+
+button:
+  - platform: restart
+    name: "Neustart"

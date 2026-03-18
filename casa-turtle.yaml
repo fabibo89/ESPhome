@@ -73,6 +73,7 @@ climate:
     name: "Temperaturregelung"
     sensor: bme280_temperature
     id: climatecontroll
+    heat_cool_mode: true
     humidity_sensor: bme280_humidity
     min_cooling_off_time: 60s #300s
     min_cooling_run_time: 60s #300s
@@ -179,15 +180,6 @@ sensor:
         - filter_out: NAN
     address: 0x76
 #  update_interval: 15s
-  - platform: template
-    name: "Altitude"
-    lambda: |-
-      const float STANDARD_SEA_LEVEL_PRESSURE = 1013.25; //in hPa, see note
-      return ((id(bme280_temperature).state + 273.15) / 0.0065) *
-        (powf((STANDARD_SEA_LEVEL_PRESSURE / id(bme280_pressure).state), 0.190234) - 1); // in meter
-    update_interval: 15s
-    icon: 'mdi:signal'
-    unit_of_measurement: 'm'
   - platform: absolute_humidity
     name: "Absolute Humidity"
     temperature: bme280_temperature
@@ -315,7 +307,12 @@ switch:
     id: switch_Klappfenster_A
   - platform: gpio
     pin: GPIO13
-    id: switch_Klappfenster_B      
+    id: switch_Klappfenster_B 
+  - platform: gpio
+    pin: GPIO17
+    id: switch_fountain_A
+    name: "Switch Brunnen"
+    entity_category: "config"                   
   - platform: gpio
     pin: GPIO32
     inverted: true
@@ -527,6 +524,9 @@ script:
 
 
 button:
+  - platform: restart
+    name: "Casa Turtle Neustart"
+    entity_category: diagnostic  
   - platform: template
     name: "Gardine zurücksetzen"
     id: blinds_reset
