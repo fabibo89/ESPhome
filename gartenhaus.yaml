@@ -36,6 +36,10 @@ globals:
     type: bool
     restore_value: yes
     initial_value: 'false'
+  - id: status_led_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'true'
 
 script:
   - id: apply_status_state
@@ -48,12 +52,19 @@ script:
           state: !lambda 'return id(status_active);'
       - if:
           condition:
-            lambda: 'return id(status_active);'
+            lambda: 'return id(status_led_enabled);'
           then:
-            - light.turn_on: light_green
-            - light.turn_off: light_red
+            - if:
+                condition:
+                  lambda: 'return id(status_active);'
+                then:
+                  - light.turn_on: light_green
+                  - light.turn_off: light_red
+                else:
+                  - light.turn_on: light_red
+                  - light.turn_off: light_green
           else:
-            - light.turn_on: light_red
+            - light.turn_off: light_red
             - light.turn_off: light_green
 
   - id: set_status
@@ -62,6 +73,14 @@ script:
     then:
       - lambda: |-
           id(status_active) = new_state;
+      - script.execute: apply_status_state
+
+  - id: set_led_enabled
+    parameters:
+      new_state: bool
+    then:
+      - lambda: |-
+          id(status_led_enabled) = new_state;
       - script.execute: apply_status_state
 
   - id: toggle_status
@@ -174,6 +193,21 @@ switch:
           id: set_status
           new_state: false
 
+  - platform: template
+    name: "Status LED Schalter"
+    id: status_led_switch
+    optimistic: true
+    lambda: |-
+      return id(status_led_enabled);
+    turn_on_action:
+      - script.execute:
+          id: set_led_enabled
+          new_state: true
+    turn_off_action:
+      - script.execute:
+          id: set_led_enabled
+          new_state: false
+
 cover:
   - platform: time_based
     id: cover_Tur
@@ -257,6 +291,7 @@ light:
     name: "rote Lampe"
     output: gpio_led_red
     id: light_red
+    internal: true
     on_turn_on:
       - light.turn_off: light_green
 
@@ -264,38 +299,9 @@ light:
     name: "grüne Lampe"
     output: gpio_led_green
     id: light_green
+    internal: true
     on_turn_on:
       - light.turn_off: light_red
-
-select:
-  - platform: template
-    name: "Status LED"
-    id: status_led_select
-    optimistic: true
-    options:
-      - aus
-      - rot
-      - grün
-    initial_option: aus
-    set_action:
-      - if:
-          condition:
-            lambda: 'return x == "aus";'
-          then:
-            - light.turn_off: light_red
-            - light.turn_off: light_green
-      - if:
-          condition:
-            lambda: 'return x == "rot";'
-          then:
-            - light.turn_on: light_red
-            - light.turn_off: light_green
-      - if:
-          condition:
-            lambda: 'return x == "grün";'
-          then:
-            - light.turn_off: light_red
-            - light.turn_on: light_green
 
 climate:
   - platform: thermostat
