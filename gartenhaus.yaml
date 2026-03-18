@@ -40,6 +40,18 @@ globals:
     type: bool
     restore_value: yes
     initial_value: 'true'
+  - id: prison_mode
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+  - id: blink_running
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: blink_on
+    type: bool
+    restore_value: no
+    initial_value: 'true'
 
 script:
   - id: apply_status_state
@@ -52,20 +64,24 @@ script:
           state: !lambda 'return id(status_active);'
       - if:
           condition:
-            lambda: 'return id(status_led_enabled);'
+            lambda: 'return !id(blink_running);'
           then:
             - if:
                 condition:
-                  lambda: 'return id(status_active);'
+                  lambda: 'return id(status_led_enabled);'
                 then:
-                  - light.turn_on: light_green
-                  - light.turn_off: light_red
+                  - if:
+                      condition:
+                        lambda: 'return id(status_active);'
+                      then:
+                        - light.turn_on: light_green
+                        - light.turn_off: light_red
+                      else:
+                        - light.turn_on: light_red
+                        - light.turn_off: light_green
                 else:
-                  - light.turn_on: light_red
+                  - light.turn_off: light_red
                   - light.turn_off: light_green
-          else:
-            - light.turn_off: light_red
-            - light.turn_off: light_green
 
   - id: set_status
     parameters:
@@ -88,6 +104,73 @@ script:
       - lambda: |-
           id(status_active) = !id(status_active);
       - script.execute: apply_status_state
+
+  - id: start_status_blink
+    then:
+      - if:
+          condition:
+            lambda: 'return id(status_led_enabled);'
+          then:
+            - lambda: |-
+                id(blink_running) = true;
+                id(blink_on) = true;
+            - if:
+                condition:
+                  lambda: 'return id(status_active);'
+                then:
+                  - light.turn_on: light_green
+                  - light.turn_off: light_red
+                else:
+                  - light.turn_on: light_red
+                  - light.turn_off: light_green
+          else:
+            - lambda: |-
+                id(blink_running) = false;
+                id(blink_on) = false;
+
+  - id: stop_status_blink
+    then:
+      - lambda: |-
+          id(blink_running) = false;
+          id(blink_on) = false;
+      - script.execute: apply_status_state
+
+interval:
+  - interval: 500ms
+    then:
+      - if:
+          condition:
+            lambda: 'return id(blink_running);'
+          then:
+            - if:
+                condition:
+                  lambda: 'return id(status_led_enabled);'
+                then:
+                  - if:
+                      condition:
+                        lambda: 'return id(blink_on);'
+                      then:
+                        - light.turn_off: light_red
+                        - light.turn_off: light_green
+                        - lambda: |-
+                            id(blink_on) = false;
+                      else:
+                        - if:
+                            condition:
+                              lambda: 'return id(status_active);'
+                            then:
+                              - light.turn_on: light_green
+                              - light.turn_off: light_red
+                            else:
+                              - light.turn_on: light_red
+                              - light.turn_off: light_green
+                        - lambda: |-
+                            id(blink_on) = true;
+                else:
+                  - lambda: |-
+                      id(blink_running) = false;
+                      id(blink_on) = false;
+                  - script.execute: apply_status_state
 
 binary_sensor:
   - platform: gpio
@@ -208,19 +291,41 @@ switch:
           id: set_led_enabled
           new_state: false
 
+  - platform: template
+    name: "Prison Mode"
+    id: prison_mode_switch
+    optimistic: true
+    lambda: |-
+      return id(prison_mode);
+    turn_on_action:
+      - lambda: |-
+          id(prison_mode) = true;
+      - cover.stop: cover_Tur
+      - cover.close: cover_Tur
+    turn_off_action:
+      - lambda: |-
+          id(prison_mode) = false;
+
 cover:
   - platform: time_based
     id: cover_Tur
     name: "Tür"
     open_action:
-      - switch.turn_on: switch_Schiebetur_A
-      - switch.turn_off: switch_Schiebetur_B
+      - if:
+          condition:
+            lambda: 'return !id(prison_mode);'
+          then:
+            - script.execute: start_status_blink
+            - switch.turn_on: switch_Schiebetur_A
+            - switch.turn_off: switch_Schiebetur_B
     open_duration: 15s
     close_action:
+      - script.execute: start_status_blink
       - switch.turn_off: switch_Schiebetur_A
       - switch.turn_on: switch_Schiebetur_B
     close_duration: 15s
     stop_action:
+      - script.execute: stop_status_blink
       - switch.turn_off: switch_Schiebetur_A
       - switch.turn_off: switch_Schiebetur_B
     assumed_state: true
@@ -230,14 +335,17 @@ cover:
     id: cover_Dach
     name: "Dach"
     open_action:
+      - script.execute: start_status_blink
       - switch.turn_off: switch_Dach_A
       - switch.turn_on: switch_Dach_B
     open_duration: 7s
     close_action:
+      - script.execute: start_status_blink
       - switch.turn_on: switch_Dach_A
       - switch.turn_off: switch_Dach_B
     close_duration: 7s
     stop_action:
+      - script.execute: stop_status_blink
       - switch.turn_off: switch_Dach_A
       - switch.turn_off: switch_Dach_B
     assumed_state: true
