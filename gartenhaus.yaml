@@ -64,6 +64,17 @@ script:
           state: !lambda 'return id(status_active);'
       - if:
           condition:
+            lambda: 'return id(status_active);'
+          then:
+            - climate.control:
+                id: climatecontroll
+                mode: "HEAT_COOL"
+          else:
+            - climate.control:
+                id: climatecontroll
+                mode: "OFF"
+      - if:
+          condition:
             lambda: 'return !id(blink_running);'
           then:
             - if:
@@ -178,6 +189,7 @@ binary_sensor:
       number: GPIO34
       inverted: true
     name: "Taster Dach"
+    entity_category: diagnostic
     on_press:
       then:
         - cover.toggle: cover_Dach
@@ -187,6 +199,7 @@ binary_sensor:
       number: GPIO39
       inverted: true
     name: "Taster Sonstiges"
+    entity_category: diagnostic
     on_press:
       then:
         - cover.toggle: cover_Dach
@@ -197,6 +210,7 @@ binary_sensor:
       number: GPIO35
       inverted: true
     name: "Taster Tür"
+    entity_category: diagnostic
     on_press:
       then:
         - cover.toggle: cover_Tur
@@ -206,15 +220,32 @@ binary_sensor:
       number: GPIO36
       inverted: true
     name: "Taster Status"
-    on_press:
-      then:
-        - script.execute: toggle_status
+    entity_category: diagnostic
+    on_multi_click:
+      - timing:
+          - ON for at least 1.2s
+        then:
+          - script.execute:
+              id: set_status
+              new_state: true
+          - switch.turn_on: switch_lamp
+      - timing:
+          - ON for at most 1s
+          - OFF for at least 0.2s
+        then:
+          - script.execute: toggle_status
 
   - platform: template
     name: "Status"
     id: status_binary
     lambda: |-
       return id(status_active);
+
+  - platform: template
+    name: "Heizung aktiv"
+    id: heating_active
+    lambda: |-
+      return id(climatecontroll).action == CLIMATE_ACTION_HEATING;
 
 switch:
   - platform: gpio
@@ -243,16 +274,13 @@ switch:
 
   - platform: gpio
     pin: GPIO25
-    name: "Heizung"
     id: switch_heating
-    entity_category: config
-    device_class: outlet
+    internal: true
 
   - platform: gpio
     pin: GPIO26
     id: switch_lamp
     name: "Lampe"
-    entity_category: config
     device_class: outlet
 
   - platform: gpio
@@ -448,6 +476,12 @@ climate:
       - name: Home
         default_target_temperature_low: 15 °C
         default_target_temperature_high: 25 °C
+    on_control:
+      - lambda: |-
+          // Wenn Status nicht aktiv ist, alle externen Steuerungen auf OFF erzwingen
+          if (!id(status_active)) {
+            x.set_mode("OFF");
+          }
 
 button:
   - platform: restart
