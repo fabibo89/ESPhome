@@ -1,0 +1,102 @@
+esphome:
+  name: test-gartenhaus
+  friendly_name: test Gartenhaus
+  on_boot:
+    priority: -100
+    then:
+      - binary_sensor.template.publish:
+          id: state_sensor
+          state: !lambda 'return id(state);'
+      - switch.template.publish:
+          id: state_switch
+          state: !lambda 'return id(state);'
+      - if:
+          condition:
+            lambda: 'return id(state);'
+          then:
+            - output.turn_on: state_gpio27
+          else:
+            - output.turn_off: state_gpio27
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "j/SZcchbudAY8YX3z6IT0YLchEqelQ0iu4HIYoCjflE="
+
+ota:
+  - platform: esphome
+    password: "9994c5fc1eb2bacce2969b510ae31929"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Test-Gartenhaus Fallback Hotspot"
+    password: "jVZ0DH8a7Ehk"
+
+captive_portal:
+
+globals:
+  - id: state
+    type: bool
+    restore_value: yes
+    initial_value: "false"
+
+binary_sensor:
+  - platform: template
+    id: state_sensor
+    name: "State"
+    lambda: |-
+      return id(state);
+
+output:
+  - platform: gpio
+    id: state_gpio27
+    pin: GPIO27
+
+switch:
+  - platform: template
+    id: state_switch
+    name: "State Switch"
+    lambda: |-
+      return id(state);
+    turn_on_action:
+      - lambda: |-
+          id(state) = true;
+      - output.turn_on: state_gpio27
+      - binary_sensor.template.publish:
+          id: state_sensor
+          state: !lambda 'return id(state);'
+      - switch.template.publish:
+          id: state_switch
+          state: !lambda 'return id(state);'
+    turn_off_action:
+      - lambda: |-
+          id(state) = false;
+      - output.turn_off: state_gpio27
+      - binary_sensor.template.publish:
+          id: state_sensor
+          state: !lambda 'return id(state);'
+      - switch.template.publish:
+          id: state_switch
+          state: !lambda 'return id(state);'
+    restore_mode: DISABLED
+
+button:
+  - platform: template
+    name: "State Toggle"
+    on_press:
+      - switch.toggle: state_switch
+
+  - platform: restart
+    name: "ESP Reboot"

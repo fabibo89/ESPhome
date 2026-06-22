@@ -23,6 +23,8 @@ esp32:
 
 # Enable logging
 logger:
+  logs:
+    i2c: DEBUG
 
 # Enable Home Assistant API
 api:
@@ -125,7 +127,10 @@ climate:
       - logger.log: "idle_action"
       - if:
           condition:
-            lambda: 'return id(bme280_temperature).state < id(climatecontroll).target_temperature_low;'
+            lambda: |-
+              return id(bme280_temperature).has_state() &&
+                     !isnan(id(bme280_temperature).state) &&
+                     id(bme280_temperature).state < id(climatecontroll).target_temperature_low;
           then:
             - cover.close: cover_Luftungstur     
       - switch.turn_off: switch_heat
@@ -137,8 +142,17 @@ climate:
         default_target_temperature_low: 15 °C
         default_target_temperature_high: 25 °C
 
+i2c:
+  id: i2c_bus
+  sda: GPIO21
+  scl: GPIO22
+  frequency: 100kHz
+  scan: true
+
 sensor:
   - platform: bme280_i2c
+    i2c_id: i2c_bus
+    update_interval: 30s
     temperature:
       name: "Temperatur"
       id: bme280_temperature
@@ -166,14 +180,16 @@ sensor:
             return x;   
         - filter_out: NAN
     address: 0x76
-#  update_interval: 15s
   - platform: absolute_humidity
     name: "Absolute Humidity"
     temperature: bme280_temperature
     humidity: bme280_humidity
   - platform: bme280_i2c
+    i2c_id: i2c_bus
+    update_interval: 35s
     temperature:
       name: "Temperatur Wintergarten"
+      id: bme280_wg_temperature
       oversampling: 8x
       filters:
         - median:
@@ -185,7 +201,8 @@ sensor:
             return x;     
         - filter_out: NAN
     humidity:
-      name: "rel. Feuchtigkeit Wintergarten" 
+      name: "rel. Feuchtigkeit Wintergarten"
+      id: bme280_wg_humidity
       oversampling: 8x
       filters:
         - median:
@@ -196,13 +213,86 @@ sensor:
             if (x < 0 || x > 100) return NAN;
             return x;  
         - filter_out: NAN
-    address: 0x77    
+    address: 0x77
 
-i2c:
-  sda: GPIO21
-  scl: GPIO22
-    
+text_sensor:
+  - platform: template
+    name: "BME280 Status"
+    id: bme280_status_text
+    icon: mdi:chip
+    entity_category: diagnostic
+    lambda: |-
+      if (id(bme280_temperature).has_state() && !isnan(id(bme280_temperature).state) &&
+          id(bme280_humidity).has_state() && !isnan(id(bme280_humidity).state)) {
+        return std::string("OK");
+      }
+      return std::string("I2C Fehler oder ungueltiger Wert");
+    update_interval: 10s
+
+  - platform: template
+    name: "BME280 Werte"
+    id: bme280_values_text
+    icon: mdi:thermometer
+    entity_category: diagnostic
+    lambda: |-
+      if (!id(bme280_temperature).has_state() || isnan(id(bme280_temperature).state) ||
+          !id(bme280_humidity).has_state() || isnan(id(bme280_humidity).state)) {
+        return std::string("---");
+      }
+      char buf[48];
+      snprintf(buf, sizeof(buf), "T: %.1f C, rF: %.0f %%",
+               id(bme280_temperature).state, id(bme280_humidity).state);
+      return std::string(buf);
+    update_interval: 10s
+
+  - platform: template
+    name: "BME280 Wintergarten Status"
+    id: bme280_wg_status_text
+    icon: mdi:chip
+    entity_category: diagnostic
+    lambda: |-
+      if (id(bme280_wg_temperature).has_state() && !isnan(id(bme280_wg_temperature).state) &&
+          id(bme280_wg_humidity).has_state() && !isnan(id(bme280_wg_humidity).state)) {
+        return std::string("OK");
+      }
+      return std::string("I2C Fehler oder ungueltiger Wert");
+    update_interval: 10s
+
+  - platform: template
+    name: "BME280 Wintergarten Werte"
+    id: bme280_wg_values_text
+    icon: mdi:thermometer
+    entity_category: diagnostic
+    lambda: |-
+      if (!id(bme280_wg_temperature).has_state() || isnan(id(bme280_wg_temperature).state) ||
+          !id(bme280_wg_humidity).has_state() || isnan(id(bme280_wg_humidity).state)) {
+        return std::string("---");
+      }
+      char buf[48];
+      snprintf(buf, sizeof(buf), "T: %.1f C, rF: %.0f %%",
+               id(bme280_wg_temperature).state, id(bme280_wg_humidity).state);
+      return std::string(buf);
+    update_interval: 10s
+
 binary_sensor:
+  - platform: template
+    name: "BME280 verfuegbar"
+    id: bme280_available
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      return id(bme280_temperature).has_state() && !isnan(id(bme280_temperature).state) &&
+             id(bme280_humidity).has_state() && !isnan(id(bme280_humidity).state);
+
+  - platform: template
+    name: "BME280 Wintergarten verfuegbar"
+    id: bme280_wg_available
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      return id(bme280_wg_temperature).has_state() && !isnan(id(bme280_wg_temperature).state) &&
+             id(bme280_wg_humidity).has_state() && !isnan(id(bme280_wg_humidity).state);
+
   - platform: gpio
     pin:
       number: GPIO39
@@ -291,7 +381,8 @@ switch:
     pin: GPIO17
     id: switch_fountain_A
     name: "Switch Brunnen"
-    entity_category: "config"                   
+    entity_category: "config"    
+    restore_mode: RESTORE_DEFAULT_OFF               
   - platform: gpio
     pin: GPIO26
     name: "Heizung"

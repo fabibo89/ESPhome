@@ -1,0 +1,269 @@
+description: "Schildkröten-Tausch alle 7 Tage (Rookie/Horst, Beet1/Beet2)"
+mode: single
+triggers:
+  - platform: time_pattern
+    minutes: "/30"
+  - platform: homeassistant
+    event: start
+  - platform: state
+    entity_id: binary_sensor.gartenhaus_schildkroeten_getauscht
+    to: "on"
+conditions: []
+actions:
+  - choose:
+      # Home Assistant Start -> Initial Werte setzen/ausrechnen
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.platform == 'homeassistant' }}"
+        sequence:
+          # Falls nach einem früheren Lauf der Reminder-Status noch "on" ist,
+          # soll beim Neustart die Erinnerungslogik wieder neu starten können.
+          - service: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.turtle_swap_reminder_started
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {{ states('input_datetime.turtle_swap_last_swapped') in ['unknown','unavailable',''] }}
+                sequence:
+                  - service: input_datetime.set_datetime
+                    target:
+                      entity_id: input_datetime.turtle_swap_last_swapped
+                    data:
+                      datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+                  - service: input_number.set_value
+                    target:
+                      entity_id: input_number.turtle_swap_days_running
+                    data:
+                      value: 0
+                  - service: input_number.set_value
+                    target:
+                      entity_id: input_number.turtle_swap_days_remaining
+                    data:
+                      value: 7
+            default: []
+          - choose:
+              - conditions:
+                  - condition: state
+                    entity_id: input_boolean.turtle_swap_beet1_rookie
+                    state: "on"
+                sequence:
+                  - service: input_text.set_value
+                    target:
+                      entity_id: input_text.turtle_swap_beet1_turtle
+                    data:
+                      value: "Rookie"
+                  - service: input_text.set_value
+                    target:
+                      entity_id: input_text.turtle_swap_beet2_turtle
+                    data:
+                      value: "Horst"
+            default:
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.turtle_swap_beet1_turtle
+                data:
+                  value: "Horst"
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.turtle_swap_beet2_turtle
+                data:
+                  value: "Rookie"
+          # Wenn last_swapped bekannt ist: Zähler direkt setzen (sonst erst beim nächsten 30-Min-Tick).
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {{ not (states('input_datetime.turtle_swap_last_swapped') in ['unknown','unavailable','']) }}
+                sequence:
+                  - service: input_number.set_value
+                    target:
+                      entity_id: input_number.turtle_swap_days_running
+                    data:
+                      value: >-
+                        {% set last_ts = as_timestamp(states('input_datetime.turtle_swap_last_swapped')) or 0 %}
+                        {% if last_ts <= 0 %}
+                          0
+                        {% else %}
+                          {% set d = (now().timestamp() - last_ts) / 86400 %}
+                          {{ (d | int) if d > 0 else 0 }}
+                        {% endif %}
+                  - service: input_number.set_value
+                    target:
+                      entity_id: input_number.turtle_swap_days_remaining
+                    data:
+                      value: >-
+                        {% set last_ts = as_timestamp(states('input_datetime.turtle_swap_last_swapped')) or 0 %}
+                        {% if last_ts <= 0 %}
+                          7
+                        {% else %}
+                          {% set due_ts = last_ts + (7 * 24 * 60 * 60) %}
+                          {% set rem = (due_ts - now().timestamp()) / 86400 %}
+                          {% set ceil_rem = rem | round(0, 'ceil') %}
+                          {{ (ceil_rem if ceil_rem > 0 else 0) | int }}
+                        {% endif %}
+
+          # Falls beim Neustart bereits fällig: direkt Reminder starten.
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {% set last_str = states('input_datetime.turtle_swap_last_swapped') %}
+                      {% if last_str in ['unknown','unavailable',''] %}
+                        false
+                      {% else %}
+                        {% set last_ts = as_timestamp(last_str) or 0 %}
+                        {% set due_ts = last_ts + (7 * 24 * 60 * 60) %}
+                        {{ now().timestamp() >= due_ts and is_state('input_boolean.turtle_swap_reminder_started', 'off') }}
+                      {% endif %}
+                sequence:
+                  - service: logbook.log
+                    data:
+                      name: "Turtle swap"
+                      message: "homeassistant start: Reminder ist fällig -> button.press ausgelöst"
+                  - service: button.press
+                    target:
+                      entity_id: button.gartenhaus_schildkroeten_tausch_erinnerung
+                  - service: input_boolean.turn_on
+                    target:
+                      entity_id: input_boolean.turtle_swap_reminder_started
+            default: []
+
+      # Bestätigter Tausch (Gartenhaus-Event)
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.platform == 'state' }}"
+        sequence:
+          - service: input_datetime.set_datetime
+            target:
+              entity_id: input_datetime.turtle_swap_last_swapped
+            data:
+              datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+          - service: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.turtle_swap_reminder_started
+          - choose:
+              - conditions:
+                  - condition: state
+                    entity_id: input_boolean.turtle_swap_beet1_rookie
+                    state: "on"
+                sequence:
+                  - service: input_boolean.turn_off
+                    target:
+                      entity_id: input_boolean.turtle_swap_beet1_rookie
+                  - service: input_text.set_value
+                    target:
+                      entity_id: input_text.turtle_swap_beet1_turtle
+                    data:
+                      value: "Horst"
+                  - service: input_text.set_value
+                    target:
+                      entity_id: input_text.turtle_swap_beet2_turtle
+                    data:
+                      value: "Rookie"
+            default:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.turtle_swap_beet1_rookie
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.turtle_swap_beet1_turtle
+                data:
+                  value: "Rookie"
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.turtle_swap_beet2_turtle
+                data:
+                  value: "Horst"
+          - service: input_number.set_value
+            target:
+              entity_id: input_number.turtle_swap_days_running
+            data:
+              value: 0
+          - service: input_number.set_value
+            target:
+              entity_id: input_number.turtle_swap_days_remaining
+            data:
+              value: 7
+
+    # Default: time_pattern (alle 30 Minuten)
+    default:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.turtle_swap_days_running
+        data:
+          value: >-
+            {% set last_ts = as_timestamp(states('input_datetime.turtle_swap_last_swapped')) or 0 %}
+            {% if last_ts <= 0 %}
+              0
+            {% else %}
+              {% set d = (now().timestamp() - last_ts) / 86400 %}
+              {{ (d | int) if d > 0 else 0 }}
+            {% endif %}
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.turtle_swap_days_remaining
+        data:
+          value: >-
+            {% set last_ts = as_timestamp(states('input_datetime.turtle_swap_last_swapped')) or 0 %}
+            {% if last_ts <= 0 %}
+              7
+            {% else %}
+              {% set due_ts = last_ts + (7 * 24 * 60 * 60) %}
+              {% set rem = (due_ts - now().timestamp()) / 86400 %}
+              {% set ceil_rem = rem | round(0, 'ceil') %}
+              {{ (ceil_rem if ceil_rem > 0 else 0) | int }}
+            {% endif %}
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: input_boolean.turtle_swap_beet1_rookie
+                state: "on"
+            sequence:
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.turtle_swap_beet1_turtle
+                data:
+                  value: "Rookie"
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.turtle_swap_beet2_turtle
+                data:
+                  value: "Horst"
+        default:
+          - service: input_text.set_value
+            target:
+              entity_id: input_text.turtle_swap_beet1_turtle
+            data:
+              value: "Horst"
+          - service: input_text.set_value
+            target:
+              entity_id: input_text.turtle_swap_beet2_turtle
+            data:
+              value: "Rookie"
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {% set last_str = states('input_datetime.turtle_swap_last_swapped') %}
+                  {% if last_str in ['unknown','unavailable',''] %}
+                    false
+                  {% else %}
+                    {% set last_ts = as_timestamp(last_str) or 0 %}
+                    {% set due_ts = last_ts + (7 * 24 * 60 * 60) %}
+                    {{ now().timestamp() >= due_ts and is_state('input_boolean.turtle_swap_reminder_started', 'off') }}
+                  {% endif %}
+            sequence:
+              - service: logbook.log
+                data:
+                  name: "Turtle swap"
+                  message: "time_pattern: Reminder ist fällig -> button.press ausgelöst"
+              - service: button.press
+                target:
+                  entity_id: button.gartenhaus_schildkroeten_tausch_erinnerung
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.turtle_swap_reminder_started
+        default: []
+

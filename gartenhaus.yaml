@@ -77,6 +77,10 @@ script:
           id: status_binary
           state: !lambda 'return id(status_active);'
 
+      - binary_sensor.template.publish:
+          id: turtle_swap_reminder_active_sensor
+          state: !lambda 'return id(turtle_swap_reminder_active);'
+
       - switch.template.publish:
           id: status_switch
           state: !lambda 'return id(status_active);'
@@ -185,6 +189,10 @@ script:
       # Set initial color immediately (next interval tick will toggle)
       - light.turn_on: light_red
       - light.turn_off: light_green
+
+      - binary_sensor.template.publish:
+          id: turtle_swap_reminder_active_sensor
+          state: true
 
   - id: turtle_swap_reminder_stop
     then:
@@ -331,6 +339,13 @@ binary_sensor:
     id: status_binary
     lambda: |-
       return id(status_active);
+
+  - platform: template
+    name: "Turtle Swap Reminder aktiv"
+    id: turtle_swap_reminder_active_sensor
+    entity_category: diagnostic
+    lambda: |-
+      return id(turtle_swap_reminder_active);
 
   - platform: template
     name: "Heizung aktiv"
