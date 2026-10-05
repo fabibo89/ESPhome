@@ -148,6 +148,8 @@ i2c:
   scl: GPIO22
   frequency: 100kHz
   scan: true
+  sda_pullup_enabled: true
+  scl_pullup_enabled: true
 
 sensor:
   - platform: bme280_i2c
@@ -180,10 +182,6 @@ sensor:
             return x;   
         - filter_out: NAN
     address: 0x76
-  - platform: absolute_humidity
-    name: "Absolute Humidity"
-    temperature: bme280_temperature
-    humidity: bme280_humidity
   - platform: bme280_i2c
     i2c_id: i2c_bus
     update_interval: 35s
