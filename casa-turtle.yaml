@@ -313,10 +313,16 @@ binary_sensor:
              id(bme280_wg_humidity).has_state() && !isnan(id(bme280_wg_humidity).state);
 
   - platform: template
-    name: "Status"
+    name: "Betrieb"
     id: status_binary
     lambda: |-
       return id(status_active);
+
+  - platform: template
+    name: "Heizung aktiv"
+    id: heating_active
+    lambda: |-
+      return id(climatecontroll).action == CLIMATE_ACTION_HEATING;
 
   - platform: gpio
     pin:
@@ -410,10 +416,8 @@ switch:
     restore_mode: RESTORE_DEFAULT_OFF               
   - platform: gpio
     pin: GPIO26
-    name: "Heizung"
     id: switch_heat
-    entity_category: "config"
-    device_class: outlet
+    internal: true
   - platform: gpio
     pin: GPIO33
     inverted: true
@@ -435,10 +439,11 @@ switch:
   - platform: gpio
     pin: GPIO23
     name: "Power Kameras"
+    id: switch_cameras
     device_class: outlet    
     restore_mode: RESTORE_DEFAULT_ON
   - platform: template
-    name: "Status Aktiv Schalter"
+    name: "Betrieb"
     id: status_switch
     restore_mode: DISABLED
     lambda: |-
@@ -451,6 +456,18 @@ switch:
       - script.execute:
           id: set_status
           new_state: false
+
+text:
+  - platform: template
+    name: "Schildkröte"
+    id: turtle_name
+    icon: mdi:tortoise
+    mode: text
+    optimistic: true
+    restore_value: true
+    initial_value: "Rookie"
+    min_length: 1
+    max_length: 32
 
 output:
   - platform: ledc
@@ -619,6 +636,7 @@ script:
             - climate.control:
                 id: climatecontroll
                 mode: HEAT_COOL
+            - switch.turn_on: switch_cameras
           else:
             - climate.control:
                 id: climatecontroll
@@ -626,6 +644,7 @@ script:
             - switch.turn_off: switch_heat
             - fan.turn_off: fan_climate
             - light.turn_off: light_stripe
+            - switch.turn_off: switch_cameras
             - cover.open: cover_Klapptur
             - cover.open: cover_Wintergarten
   - id: set_status
