@@ -7,3 +7,5 @@ secrets.yaml
 *.log
 .DS_Store
 ESPhome.code-workspace
+
+._*
